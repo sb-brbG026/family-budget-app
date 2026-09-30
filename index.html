@@ -3220,6 +3220,9 @@
           <a id="linkGoogleSheet" href="#" target="_blank" class="chip-btn" style="display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; text-decoration: none; color: #10b981; border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.1);">
             📊 Открыть Google Таблицу
           </a>
+          <button type="button" class="chip-btn" id="btnSyncToSheets" style="padding: 10px; font-size: 12px; display: flex; align-items: center; justify-content: center; gap: 6px; color: #6366f1; border-color: rgba(99, 102, 241, 0.3); background: rgba(99, 102, 241, 0.08);" onclick="syncAllToGoogleSheets()">
+            🔄 Выгрузить копию в Google Таблицу
+          </button>
           <button type="button" class="chip-btn" style="padding: 10px; font-size: 12px;" onclick="exportTransactionsCsv()">
             📥 Скачать резервную копию (CSV)
           </button>
@@ -3875,6 +3878,16 @@
             if (error) throw error;
             syncToGasBackground('deleteCategory', { name: payload.name, type: payload.type });
             return { success: true, message: 'Категория удалена' };
+          }
+          if (action === 'syncAllFromSupabase') {
+            const authPin = getStoredAuthPin();
+            const bodyData = { action: 'syncAllFromSupabase', authPin };
+            const resp = await fetch(GAS_API_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify(bodyData)
+            });
+            return await resp.json();
           }
         } catch (supabaseErr) {
           console.warn('⚡ Supabase request failed, falling back to GAS API:', supabaseErr);
@@ -6059,6 +6072,40 @@
     }
 
 
+    
+    function syncAllToGoogleSheets() {
+      triggerHaptic('medium');
+      const btn = document.getElementById('btnSyncToSheets');
+      const origText = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner" style="width:14px; height:14px; border-width:2px; display:inline-block; vertical-align:middle; margin-right:6px;"></span>Выгрузка в Таблицу...';
+      }
+
+      callBackendApi('syncAllFromSupabase')
+        .then((res) => {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origText;
+          }
+          if (res && res.success) {
+            triggerHaptic('success');
+            showToast(res.message || '✅ Успешно выгружено в Google Таблицу!');
+          } else {
+            triggerHaptic('error');
+            showToast('⚠️ ' + ((res && res.message) || 'Ошибка выгрузки'), 'error');
+          }
+        })
+        .catch((err) => {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origText;
+          }
+          console.error('Sync all error:', err);
+          showToast('❌ Ошибка связи: ' + (err.message || err.toString()), 'error');
+        });
+    }
+  
     function exportTransactionsCsv() {
       if (!appData || !appData.recentTransactions || appData.recentTransactions.length === 0) {
         showToast('⚠️ Нет данных для экспорта', 'error');
