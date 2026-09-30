@@ -3925,6 +3925,9 @@
             case 'deleteCategory':
               runner.apiDeleteCategory(payload.name, payload.type);
               break;
+            case 'syncAllFromSupabase':
+              runner.apiSyncAllFromSupabase();
+              break;
             default:
               reject(new Error('Unknown action: ' + action));
           }
@@ -6093,7 +6096,13 @@
             showToast(res.message || '✅ Успешно выгружено в Google Таблицу!');
           } else {
             triggerHaptic('error');
-            showToast('⚠️ ' + ((res && res.message) || 'Ошибка выгрузки'), 'error');
+            const msg = (res && res.message) || 'Ошибка выгрузки';
+            if (msg === 'Unknown action') {
+              showToast('⚠️ Требуется обновить скрипт в Таблице (Deploy ➔ Новое развертывание)', 'error');
+              alert('⚠️ В Google Apps Script еще не активирована новая версия кода:\n\n1. Откройте Google Таблицу ➔ Расширения ➔ Apps Script\n2. Замените содержимое Code.gs на актуальный код\n3. Нажмите: Развернуть ➔ Управление развертываниями ➔ ✏️ (карандаш) ➔ Версия: [Новая версия] ➔ Развернуть');
+            } else {
+              showToast('⚠️ ' + msg, 'error');
+            }
           }
         })
         .catch((err) => {
