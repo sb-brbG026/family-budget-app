@@ -38,6 +38,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <!-- Chart.js for beautiful analytics -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
@@ -3545,6 +3547,225 @@
       showPinScreen('Приложение заблокировано. Введите PIN-код');
     }
 
+
+    // ==========================================
+    // ⚡ SUPABASE ULTRA-FAST DATABASE INTEGRATION
+    // ==========================================
+    const SUPABASE_CONFIG = {
+      url: 'https://idspmirkwfbwxsvmkxwz.supabase.co',
+      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlkc3BtaXJrd2Zid3hzdm1reHd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA3ODg4NDQsImV4cCI6MjEwNjM2NDg0NH0.CR7BCCJu_hLx7Up0pIXZUHo_n8xacHZsFXZ0a_BC5xM'
+    };
+
+    let supabaseClient = null;
+    try {
+      if (window.supabase && window.supabase.createClient) {
+        supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+        console.log('⚡ Supabase client initialized!');
+      }
+    } catch (e) {
+      console.warn('Supabase init warning:', e);
+    }
+
+    const MONTH_NAMES_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+    const MONTH_NAMES_SHORT_RU = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+
+    function initSupabaseRealtime() {
+      if (!supabaseClient) return;
+      try {
+        supabaseClient
+          .channel('public:transactions')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, (payload) => {
+            console.log('⚡ Realtime update from Supabase:', payload);
+            loadInitialData(selectedYear, selectedMonth);
+          })
+          .subscribe();
+      } catch (e) {
+        console.warn('Realtime error:', e);
+      }
+    }
+
+    async function getInitialDataFromSupabase(year, month) {
+      if (!supabaseClient) throw new Error('Supabase client not initialized');
+
+      const [txRes, catRes, setRes] = await Promise.all([
+        supabaseClient.from('transactions').select('*').order('date', { ascending: false }),
+        supabaseClient.from('categories').select('*'),
+        supabaseClient.from('settings').select('*')
+      ]);
+
+      if (txRes.error) throw txRes.error;
+
+      const allTx = txRes.data || [];
+      const categoriesRaw = catRes.data || [];
+      const settingsRows = setRes.data || [];
+      const settings = {};
+      settingsRows.forEach(r => settings[r.key] = r.value);
+
+      // Группировка категорий
+      const categories = { EXPENSE: [], INCOME: [] };
+      categoriesRaw.forEach(c => {
+        if (c.type === 'Доход') categories.INCOME.push(c);
+        else categories.EXPENSE.push(c);
+      });
+
+      const now = new Date();
+      const targetYear = (year !== undefined && year !== null && year !== '') ? parseInt(year) : now.getFullYear();
+      const isAnnual = (month === 'all' || month === -1 || month === '-1' || month === 'year');
+      const targetMonth = isAnnual ? 'all' : ((month !== undefined && month !== null && month !== '') ? parseInt(month) : now.getMonth());
+
+      let daysInMonth = 30;
+      let chartLabels = [];
+      let periodExpenses = [];
+      let periodIncomes = [];
+
+      if (isAnnual) {
+        chartLabels = MONTH_NAMES_SHORT_RU;
+        periodExpenses = new Array(12).fill(0);
+        periodIncomes = new Array(12).fill(0);
+      } else {
+        daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        chartLabels = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+        periodExpenses = new Array(daysInMonth).fill(0);
+        periodIncomes = new Array(daysInMonth).fill(0);
+      }
+
+      const monthsMap = {};
+      const yearsSet = new Set([now.getFullYear(), targetYear]);
+      const curKey = now.getFullYear() + '_' + now.getMonth();
+      monthsMap[curKey] = {
+        year: now.getFullYear(),
+        month: now.getMonth(),
+        label: MONTH_NAMES_RU[now.getMonth()] + ' ' + now.getFullYear(),
+        sortKey: now.getFullYear() * 100 + now.getMonth()
+      };
+
+      let totalExpense = 0;
+      let totalIncome = 0;
+      const byCategory = {};
+      const byMethod = { 'Карта': 0, 'Наличные': 0 };
+      let monthTxCount = 0;
+
+      const recentTransactions = allTx.slice(0, 20).map(t => ({
+        id: t.id,
+        dateStr: t.date_formatted,
+        type: t.type,
+        category: t.category,
+        amount: Number(t.amount) || 0,
+        description: t.description,
+        user: t.user_name,
+        method: t.payment_method
+      }));
+
+      const monthTransactions = [];
+
+      for (const t of allTx) {
+        const d = new Date(t.date);
+        if (isNaN(d.getTime())) continue;
+        const y = d.getFullYear();
+        const m = d.getMonth();
+        yearsSet.add(y);
+
+        const mKey = y + '_' + m;
+        if (!monthsMap[mKey]) {
+          monthsMap[mKey] = {
+            year: y,
+            month: m,
+            label: MONTH_NAMES_RU[m] + ' ' + y,
+            sortKey: y * 100 + m
+          };
+        }
+
+        const matchPeriod = isAnnual ? (y === targetYear) : (y === targetYear && m === targetMonth);
+        if (matchPeriod) {
+          const amt = Number(t.amount) || 0;
+          const methodStr = String(t.payment_method || '');
+          const isCash = methodStr.toLowerCase().includes('налич') || methodStr.toLowerCase().includes('кэш');
+          const payKey = isCash ? 'Наличные' : 'Карта';
+
+          if (isAnnual) {
+            if (t.type === 'Доход') periodIncomes[m] += amt;
+            else periodExpenses[m] += amt;
+          } else {
+            const day = d.getDate() - 1;
+            if (day >= 0 && day < daysInMonth) {
+              if (t.type === 'Доход') periodIncomes[day] += amt;
+              else periodExpenses[day] += amt;
+            }
+          }
+
+          if (t.type === 'Доход') {
+            totalIncome += amt;
+          } else {
+            totalExpense += amt;
+            byCategory[t.category] = (byCategory[t.category] || 0) + amt;
+            byMethod[payKey] = (byMethod[payKey] || 0) + amt;
+          }
+          monthTxCount++;
+
+          monthTransactions.push({
+            id: t.id,
+            dateStr: t.date_formatted,
+            type: t.type,
+            category: t.category,
+            amount: amt,
+            description: t.description,
+            user: t.user_name,
+            method: t.payment_method
+          });
+        }
+      }
+
+      const availableMonths = Object.values(monthsMap).sort((a, b) => b.sortKey - a.sortKey);
+      const availableYears = Array.from(yearsSet).sort((a, b) => b - a);
+
+      return {
+        success: true,
+        currency: settings.CURRENCY || 'BYN',
+        currentMonth: isAnnual ? 'Весь год' : MONTH_NAMES_RU[targetMonth],
+        currentYear: targetYear,
+        selectedMonth: targetMonth,
+        selectedYear: targetYear,
+        isAnnual: isAnnual,
+        periodLabel: isAnnual ? (targetYear + ' год') : (MONTH_NAMES_RU[targetMonth] + ' ' + targetYear),
+        availableMonths,
+        availableYears,
+        stats: {
+          totalIncome,
+          totalExpense,
+          balance: totalIncome - totalExpense,
+          byCategory,
+          byMethod,
+          count: monthTxCount
+        },
+        categories,
+        recentTransactions,
+        monthTransactions,
+        chartData: {
+          days: chartLabels,
+          dailyExpenses: periodExpenses,
+          dailyIncomes: periodIncomes,
+          categoriesBreakdown: Object.entries(byCategory).map(([cat, amount]) => ({
+            name: cat,
+            amount: amount,
+            emoji: '🏷️'
+          })).sort((a, b) => b.amount - a.amount)
+        },
+        aiEngine: settings.AI_ENGINE || 'openrouter'
+      };
+    }
+
+    function syncToGasBackground(action, payload) {
+      try {
+        const authPin = getStoredAuthPin();
+        const bodyData = Object.assign({ action, authPin }, payload);
+        fetch(GAS_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(bodyData)
+        }).catch(e => console.warn('Background GAS sync info:', e));
+      } catch (e) {}
+    }
+
     // Cloudflare Pages & Apps Script API Config
     const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwvwvuEDGIgYX7qjUF_MgfeBPHdLc-p6yQR5hTzsnSEkOwiBflMz8iSNzfrN3riC821IQ/exec";
 
@@ -3553,6 +3774,113 @@
      * так и на Cloudflare Pages / автономном хостинге (fetch POST).
      */
     async function callBackendApi(action, payload = {}) {
+      // ⚡ МГНОВЕННЫЙ ОТВЕТ ИЗ SUPABASE (50-100 мс)
+      if (supabaseClient) {
+        try {
+          if (action === 'getInitialData') {
+            return await getInitialDataFromSupabase(payload.year, payload.month);
+          }
+          if (action === 'addTransaction') {
+            const p = payload.payload;
+            const txId = p.id || ('TX-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5));
+            const now = p.date ? new Date(p.date) : new Date();
+            const dateStr = p.dateFormatted || p.dateStr || (now.toLocaleDateString('ru-RU') + ' ' + now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
+
+            const row = {
+              id: txId,
+              date: now.toISOString(),
+              date_formatted: dateStr,
+              type: p.type,
+              category: p.category,
+              amount: Number(p.amount),
+              description: p.description || p.category,
+              user_name: p.user || currentUser || 'Сергей',
+              payment_method: p.method || 'Карта'
+            };
+            const { error } = await supabaseClient.from('transactions').insert([row]);
+            if (error) throw error;
+            syncToGasBackground('addTransaction', { payload: Object.assign({}, p, { id: txId }) });
+            return { success: true, message: 'Успешно сохранено', data: row };
+          }
+          if (action === 'deleteTransaction') {
+            const { error } = await supabaseClient.from('transactions').delete().eq('id', payload.id);
+            if (error) throw error;
+            syncToGasBackground('deleteTransaction', { id: payload.id });
+            return { success: true, message: 'Операция удалена' };
+          }
+          if (action === 'updateTransaction') {
+            const p = payload.payload;
+            const updateRow = {};
+            if (p.category !== undefined) updateRow.category = p.category;
+            if (p.amount !== undefined) updateRow.amount = Number(p.amount);
+            if (p.type !== undefined) updateRow.type = p.type;
+            if (p.description !== undefined) updateRow.description = p.description;
+            if (p.user !== undefined) updateRow.user_name = p.user;
+            if (p.method !== undefined) updateRow.payment_method = p.method;
+            if (p.date) {
+              const d = new Date(p.date);
+              if (!isNaN(d.getTime())) updateRow.date = d.toISOString();
+            }
+            const { error } = await supabaseClient.from('transactions').update(updateRow).eq('id', p.id);
+            if (error) throw error;
+            syncToGasBackground('updateTransaction', { payload: p });
+            return { success: true, message: 'Операция обновлена' };
+          }
+          if (action === 'getSettings') {
+            const [catRes, setRes] = await Promise.all([
+              supabaseClient.from('categories').select('*'),
+              supabaseClient.from('settings').select('*')
+            ]);
+            const settings = {};
+            (setRes.data || []).forEach(r => settings[r.key] = r.value);
+            const categories = { EXPENSE: [], INCOME: [] };
+            (catRes.data || []).forEach(c => {
+              if (c.type === 'Доход') categories.INCOME.push(c);
+              else categories.EXPENSE.push(c);
+            });
+            return {
+              success: true,
+              currency: settings.CURRENCY || 'BYN',
+              aiEngine: settings.AI_ENGINE || 'openrouter',
+              familyMembers: settings.FAMILY_MEMBERS ? settings.FAMILY_MEMBERS.split(',').map(s => s.trim()) : ['Сергей', 'Наташа'],
+              categories: categories
+            };
+          }
+          if (action === 'saveSettings') {
+            const s = payload.settings;
+            const upserts = [];
+            if (s.currency !== undefined) upserts.push({ key: 'CURRENCY', value: String(s.currency).trim() });
+            if (s.aiEngine !== undefined) upserts.push({ key: 'AI_ENGINE', value: String(s.aiEngine) });
+            if (s.familyMembers !== undefined) upserts.push({ key: 'FAMILY_MEMBERS', value: Array.isArray(s.familyMembers) ? s.familyMembers.join(', ') : String(s.familyMembers) });
+            if (upserts.length > 0) {
+              await supabaseClient.from('settings').upsert(upserts);
+            }
+            syncToGasBackground('saveSettings', { settings: s });
+            return { success: true, message: 'Настройки успешно сохранены' };
+          }
+          if (action === 'addCategory') {
+            const c = payload.category;
+            const { error } = await supabaseClient.from('categories').insert([{
+              name: c.name,
+              type: c.type || 'Расход',
+              emoji: c.emoji || '🏷️',
+              keywords: c.keywords || []
+            }]);
+            if (error) throw error;
+            syncToGasBackground('addCategory', { category: c });
+            return { success: true, message: 'Категория добавлена' };
+          }
+          if (action === 'deleteCategory') {
+            const { error } = await supabaseClient.from('categories').delete().eq('name', payload.name);
+            if (error) throw error;
+            syncToGasBackground('deleteCategory', { name: payload.name, type: payload.type });
+            return { success: true, message: 'Категория удалена' };
+          }
+        } catch (supabaseErr) {
+          console.warn('⚡ Supabase request failed, falling back to GAS API:', supabaseErr);
+        }
+      }
+
       if (typeof google !== 'undefined' && google.script && google.script.run) {
         return new Promise((resolve, reject) => {
           const runner = google.script.run
