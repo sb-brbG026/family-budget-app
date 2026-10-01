@@ -1915,44 +1915,76 @@
     }
     .history-filter-bar {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
+      flex-direction: column;
       gap: 8px;
       margin-bottom: 12px;
-      padding-bottom: 10px;
+      padding-bottom: 12px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     }
-    .history-period-select {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 10px;
-      color: #fff;
+    .history-scope-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 3px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-sizing: border-box;
+    }
+    .history-scope-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      color: var(--text-muted);
       font-size: 12px;
-      padding: 6px 10px;
+      font-weight: 600;
+      padding: 8px 4px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+    .history-scope-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .history-scope-btn.active {
+      background: #6366f1;
+      border-color: rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+    }
+    .history-period-select {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 9px 12px;
       outline: none;
       cursor: pointer;
-      flex: 1;
-      max-width: 200px;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.7)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+      transition: border-color 0.2s;
+    }
+    .history-period-select:focus {
+      border-color: #6366f1;
     }
     .history-period-select option {
       background: #181c2e;
-      color: #fff;
-    }
-    .history-scope-btn {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 10px;
-      color: var(--text-muted);
-      font-size: 11px;
-      font-weight: 600;
-      padding: 6px 10px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      white-space: nowrap;
-    }
-    .history-scope-btn.active {
-      background: rgba(99, 102, 241, 0.25);
-      border-color: rgba(99, 102, 241, 0.5);
       color: #fff;
     }
 
@@ -2515,16 +2547,24 @@
     }
 
     /* History Mode Buttons */
+    [data-theme="light"] .history-scope-group {
+      background: #f1f5f9 !important;
+      border: 1px solid #e2e8f0 !important;
+    }
     [data-theme="light"] .history-scope-btn {
-      background: #ffffff !important;
-      border: 1.5px solid #cbd5e1 !important;
-      color: #475569 !important;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+      background: transparent !important;
+      border: 1px solid transparent !important;
+      color: #64748b !important;
+      box-shadow: none !important;
+    }
+    [data-theme="light"] .history-scope-btn:hover {
+      color: #0f172a !important;
     }
     [data-theme="light"] .history-scope-btn.active {
-      background: #6366f1 !important;
-      border-color: #6366f1 !important;
+      background: #4f46e5 !important;
+      border-color: #4f46e5 !important;
       color: #ffffff !important;
+      box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3) !important;
     }
 
     /* Transaction List Items */
@@ -3083,14 +3123,14 @@
 
         <!-- History Filter Controls -->
         <div class="history-filter-bar">
-          <select id="historyPeriodSelect" class="history-period-select" onchange="onHistoryPeriodChange(this.value)">
-            <!-- Populated dynamically via JS -->
-          </select>
-          <div style="display: flex; gap: 4px;">
-            <button type="button" class="history-scope-btn active" id="btnHistScopeMonth" onclick="setHistoryScope('month')">За месяц</button>
-            <button type="button" class="history-scope-btn" id="btnHistScopeRecent" onclick="setHistoryScope('recent')">Посл. 20</button>
+          <div class="history-scope-group">
+            <button type="button" class="history-scope-btn" id="btnHistScopeMonth" onclick="setHistoryScope('month')">За месяц</button>
+            <button type="button" class="history-scope-btn active" id="btnHistScopeRecent" onclick="setHistoryScope('recent')">Посл. 20</button>
             <button type="button" class="history-scope-btn" id="btnHistScopeAll" onclick="setHistoryScope('all')">Все</button>
           </div>
+          <select id="historyPeriodSelect" class="history-period-select" onchange="onHistoryPeriodChange(this.value)">
+            <!-- Заполняется динамически через JS -->
+          </select>
         </div>
         
         <div id="transactionsList">
@@ -5408,12 +5448,21 @@
     // RENDER LIST & CHARTS
     // ==========================================
 
+    function formatRecordsCount(n) {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      if (mod100 >= 11 && mod100 <= 19) return `${n} операций`;
+      if (mod10 === 1) return `${n} операция`;
+      if (mod10 >= 2 && mod10 <= 4) return `${n} операции`;
+      return `${n} операций`;
+    }
+
     function renderTransactionsList(list, title) {
       const container = document.getElementById('transactionsList');
       const badge = document.getElementById('txCountBadge');
-      if (badge) badge.innerText = (list ? list.length : 0) + ' операций';
+      if (badge) badge.innerText = formatRecordsCount(list ? list.length : 0);
       const titleEl = document.getElementById('historyTabTitle');
-      if (titleEl && title) titleEl.innerText = title;
+      if (titleEl) titleEl.innerText = '📋 Операции';
 
       if (!list || list.length === 0) {
         container.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 20px;">Нет операций за последнее время.</p>`;
