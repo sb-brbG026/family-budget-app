@@ -3089,6 +3089,7 @@
           <div style="display: flex; gap: 4px;">
             <button type="button" class="history-scope-btn active" id="btnHistScopeMonth" onclick="setHistoryScope('month')">За месяц</button>
             <button type="button" class="history-scope-btn" id="btnHistScopeRecent" onclick="setHistoryScope('recent')">Посл. 20</button>
+            <button type="button" class="history-scope-btn" id="btnHistScopeAll" onclick="setHistoryScope('all')">Все</button>
           </div>
         </div>
         
@@ -3648,17 +3649,29 @@
       const byMethod = { 'Карта': 0, 'Наличные': 0 };
       let monthTxCount = 0;
 
-      const recentTransactions = allTx.slice(0, 20).map(t => ({
-        id: t.id,
-        dateStr: t.date_formatted,
-        type: t.type,
-        category: t.category,
-        amount: Number(t.amount) || 0,
-        description: t.description,
-        user: t.user_name,
-        method: t.payment_method
-      }));
+      function findCatEmoji(catName, type) {
+        const cat = categoriesRaw.find(c => c.name === catName);
+        if (cat && cat.emoji) return cat.emoji;
+        return type === 'Доход' ? '💰' : '🏷️';
+      }
 
+      const allTransactions = allTx.map(t => {
+        const d = new Date(t.date);
+        return {
+          id: t.id,
+          date: t.date,
+          dateStr: t.date_formatted || (!isNaN(d.getTime()) ? (String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + d.getFullYear() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')) : ''),
+          type: t.type,
+          category: t.category,
+          emoji: findCatEmoji(t.category, t.type),
+          amount: Number(t.amount) || 0,
+          description: t.description || '',
+          user: t.user_name || 'Сергей',
+          method: t.payment_method || 'Карта'
+        };
+      });
+
+      const recentTransactions = allTransactions.slice(0, 20);
       const monthTransactions = [];
 
       for (const t of allTx) {
@@ -3710,6 +3723,7 @@
             dateStr: t.date_formatted,
             type: t.type,
             category: t.category,
+            emoji: findCatEmoji(t.category, t.type),
             amount: amt,
             description: t.description,
             user: t.user_name,
@@ -4300,39 +4314,26 @@
       historyScope = scope;
       const btnM = document.getElementById('btnHistScopeMonth');
       const btnR = document.getElementById('btnHistScopeRecent');
-      if (scope === 'recent') {
-        if (btnM) btnM.classList.remove('active');
-        if (btnR) btnR.classList.add('active');
-        if (appData && appData.recentTransactions) {
-          renderTransactionsList(appData.recentTransactions, 'Последние 20 операций');
-        }
-      } else {
-        if (btnR) btnR.classList.remove('active');
-        if (btnM) btnM.classList.add('active');
-        renderCurrentHistory();
-      }
-    }
-
-    function onYearChange(year) {
-      showToast('🔄 Загрузка данных за ' + year + ' год...');
-      loadInitialData(year, selectedMonth);
-    }
-
-    function onHistoryPeriodChange(val) {
-      if (!val) return;
-      const [year, month] = val.split('_');
-      showToast('🔄 Загрузка операций за ' + (month === 'all' ? (year + ' год') : 'выбранный месяц') + '...');
-      loadInitialData(year, month);
+      const btnA = document.getElementById('btnHistScopeAll');
+      if (btnM) btnM.classList.toggle('active', scope === 'month');
+      if (btnR) btnR.classList.toggle('active', scope === 'recent');
+      if (btnA) btnA.classList.toggle('active', scope === 'all');
+      renderCurrentHistory();
     }
 
     function renderCurrentHistory() {
       if (!appData) return;
-      const txs = (appData.monthTransactions && appData.monthTransactions.length > 0)
-        ? appData.monthTransactions
-        : (appData.recentTransactions || []);
-      
-      const periodLabel = appData.periodLabel || (appData.currentMonth + ' ' + appData.currentYear);
-      renderTransactionsList(txs, 'Операции за ' + periodLabel);
+      if (historyScope === 'all' && appData.allTransactions && appData.allTransactions.length > 0) {
+        renderTransactionsList(appData.allTransactions, 'Все операции (' + appData.allTransactions.length + ')');
+      } else if (historyScope === 'recent' && appData.recentTransactions) {
+        renderTransactionsList(appData.recentTransactions, 'Последние 20 операций');
+      } else {
+        const txs = (appData.monthTransactions && appData.monthTransactions.length > 0)
+          ? appData.monthTransactions
+          : (appData.recentTransactions || appData.allTransactions || []);
+        const periodLabel = appData.periodLabel || (appData.currentMonth + ' ' + appData.currentYear);
+        renderTransactionsList(txs, 'Операции за ' + periodLabel);
+      }
     }
 
     let selectedYear = null;
@@ -4421,8 +4422,9 @@
     }
 
     function loadInitialData(year, month) {
-      const y = (year !== undefined) ? year : selectedYear;
-      const m = (month !== undefined) ? month : selectedMonth;
+      const now = new Date();
+      const y = (year !== undefined && year !== null && year !== '') ? year : (selectedYear !== null ? selectedYear : now.getFullYear());
+      const m = (month !== undefined && month !== null && month !== '') ? month : (selectedMonth !== null ? selectedMonth : now.getMonth());
       callBackendApi('getInitialData', { year: y, month: m })
         .then(onDataLoaded)
         .catch(onDataError);
@@ -4579,6 +4581,13 @@
       const histSelect = document.getElementById('historyPeriodSelect');
       if (histSelect && availableMonths) {
         histSelect.innerHTML = '';
+
+        // Опция "Все операции"
+        const optAllTime = document.createElement('option');
+        optAllTime.value = 'all_time';
+        optAllTime.innerText = '🌟 Все операции (всё время)';
+        if (historyScope === 'all') optAllTime.selected = true;
+        histSelect.appendChild(optAllTime);
         
         // Опция за текущий год
         const optHYear = document.createElement('option');
@@ -5104,7 +5113,11 @@
       };
 
       if (!appData.recentTransactions) appData.recentTransactions = [];
+      if (!appData.allTransactions) appData.allTransactions = [];
+      if (!appData.monthTransactions) appData.monthTransactions = [];
       appData.recentTransactions.unshift(optimisticTx);
+      appData.allTransactions.unshift(optimisticTx);
+      appData.monthTransactions.unshift(optimisticTx);
 
       // Обновляем интерфейс
       document.getElementById('heroBalance').innerText = formatMoney(appData.stats.balance);
@@ -5198,9 +5211,11 @@
 
     function openEditTxModal(txId) {
       triggerHaptic('light');
-      if (!appData || !appData.recentTransactions) return;
+      if (!appData) return;
 
-      const tx = appData.recentTransactions.find(t => t.id === txId);
+      const tx = (appData.allTransactions && appData.allTransactions.find(t => t.id === txId))
+        || (appData.monthTransactions && appData.monthTransactions.find(t => t.id === txId))
+        || (appData.recentTransactions && appData.recentTransactions.find(t => t.id === txId));
       if (!tx) {
         showToast('⚠️ Операция не найдена', 'error');
         return;
@@ -5353,19 +5368,20 @@
           showToast('✅ Изменения сохранены в таблице!');
           closeEditTxModal();
 
-          // Optimistic local update
-          if (appData && appData.recentTransactions) {
-            const idx = appData.recentTransactions.findIndex(t => t.id === id);
-            if (idx !== -1) {
-              appData.recentTransactions[idx].amount = amount;
-              appData.recentTransactions[idx].type = editCurrentType;
-              appData.recentTransactions[idx].category = category;
-              appData.recentTransactions[idx].description = description;
-              appData.recentTransactions[idx].user = user;
-              appData.recentTransactions[idx].method = editCurrentMethod;
-              renderTransactionsList(appData.recentTransactions);
+          // Optimistic local update across all lists
+          [appData.allTransactions, appData.monthTransactions, appData.recentTransactions].forEach(list => {
+            if (!list) return;
+            const item = list.find(t => t.id === id);
+            if (item) {
+              item.amount = amount;
+              item.type = editCurrentType;
+              item.category = category;
+              item.description = description;
+              item.user = user;
+              item.method = editCurrentMethod;
             }
-          }
+          });
+          renderCurrentHistory();
 
           // Full reload of current month stats
           loadInitialData(selectedYear, selectedMonth);
@@ -5390,10 +5406,12 @@
 
       triggerHaptic('medium');
 
-      // Optimistic delete from UI
-      if (appData && appData.recentTransactions) {
-        appData.recentTransactions = appData.recentTransactions.filter(t => t.id !== id);
-        renderTransactionsList(appData.recentTransactions);
+      // Optimistic delete from UI across all lists
+      if (appData) {
+        if (appData.allTransactions) appData.allTransactions = appData.allTransactions.filter(t => t.id !== id);
+        if (appData.monthTransactions) appData.monthTransactions = appData.monthTransactions.filter(t => t.id !== id);
+        if (appData.recentTransactions) appData.recentTransactions = appData.recentTransactions.filter(t => t.id !== id);
+        renderCurrentHistory();
       }
 
       showToast('🗑️ Запись удалена');
