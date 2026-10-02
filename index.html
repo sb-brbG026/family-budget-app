@@ -1165,6 +1165,30 @@
       color: #fff;
     }
 
+    /* Edit Modal Helper Chips */
+    .edit-chips-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .edit-chips-grid .chip-btn {
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    .edit-chips-grid .dot-btn {
+      font-weight: 800;
+      font-size: 13px;
+      background: rgba(99, 102, 241, 0.18);
+      border-color: rgba(99, 102, 241, 0.35);
+      color: #818cf8;
+    }
+    [data-theme="light"] .edit-chips-grid .dot-btn {
+      background: #ede9fe !important;
+      border-color: #c7d2fe !important;
+      color: #4f46e5 !important;
+    }
+
     /* Transactions List - Ronas IT SaaS Card Style */
     .tx-item {
       display: flex;
@@ -3004,8 +3028,16 @@
         <div class="form-group">
           <label class="form-label">Сумма</label>
           <div class="amount-input-wrapper">
-            <input type="number" step="any" inputmode="decimal" id="editAmount" class="form-input amount-input" required placeholder="0.00">
+            <input type="text" inputmode="decimal" id="editAmount" class="form-input amount-input" required placeholder="0.00" autocomplete="off" autocorrect="off" spellcheck="false" oninput="sanitizeAmountInput(this)">
             <span class="currency-symbol" id="editCurrencySymbol">BYN</span>
+          </div>
+          <!-- Quick Helper Chips for iPhone / Mobile Decimal Input -->
+          <div class="edit-chips-grid">
+            <button type="button" class="chip-btn dot-btn" onclick="insertEditDot()" title="Поставить точку / разделитель">. (точка)</button>
+            <button type="button" class="chip-btn" onclick="addEditAmountChip(1)">+1</button>
+            <button type="button" class="chip-btn" onclick="addEditAmountChip(5)">+5</button>
+            <button type="button" class="chip-btn" onclick="addEditAmountChip(10)">+10</button>
+            <button type="button" class="chip-btn clear" onclick="clearEditAmount()" title="Очистить сумму">⌫</button>
           </div>
         </div>
 
@@ -5281,13 +5313,57 @@
 
     function sanitizeAmountInput(el) {
       if (!el) return;
-      let val = el.value.replace(',', '.');
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const oldVal = el.value || '';
+      let val = oldVal.replace(/,/g, '.');
       val = val.replace(/[^0-9.]/g, '');
       const parts = val.split('.');
       if (parts.length > 2) {
         val = parts[0] + '.' + parts.slice(1).join('');
       }
-      el.value = val;
+      if (el.value !== val) {
+        el.value = val;
+        if (start !== null && end !== null) {
+          const diff = val.length - oldVal.length;
+          const newPos = Math.max(0, Math.min(val.length, start + diff));
+          try {
+            el.setSelectionRange(newPos, newPos);
+          } catch (e) {}
+        }
+      }
+    }
+
+    function insertEditDot() {
+      triggerHaptic('light');
+      const input = document.getElementById('editAmount');
+      if (!input) return;
+      let val = (input.value || '').replace(/,/g, '.');
+      if (!val.includes('.')) {
+        val = (val === '' ? '0' : val) + '.';
+        input.value = val;
+      }
+      input.focus();
+    }
+
+    function addEditAmountChip(val) {
+      triggerHaptic('light');
+      const input = document.getElementById('editAmount');
+      if (!input) return;
+      const raw = (input.value || '').trim().replace(/,/g, '.');
+      const current = parseFloat(raw) || 0;
+      const sum = Math.round((current + Number(val)) * 100) / 100;
+      input.value = sum;
+      input.focus();
+    }
+
+    function clearEditAmount() {
+      triggerHaptic('light');
+      const input = document.getElementById('editAmount');
+      if (input) {
+        input.value = '';
+        input.focus();
+      }
     }
 
     function addAmountChip(val, evt) {
@@ -5864,7 +5940,8 @@
 
     async function submitEditTx() {
       const id = document.getElementById('editTxId').value;
-      const amount = parseFloat(document.getElementById('editAmount').value);
+      const rawAmount = (document.getElementById('editAmount').value || '').toString().trim().replace(/,/g, '.');
+      const amount = parseFloat(rawAmount);
       const category = document.getElementById('editCategory').value;
       const description = document.getElementById('editDescription').value;
       const date = document.getElementById('editDate').value;
